@@ -6,10 +6,10 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/hatchify/queue"
-	"github.com/hatchify/scribe"
+	"github.com/gdbu/queue"
+	"github.com/gdbu/scribe"
 
-	"github.com/Hatch1fy/errors"
+	"github.com/hatchify/errors"
 )
 
 const (

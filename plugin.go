@@ -6,7 +6,7 @@ import (
 	"plugin"
 	"strings"
 
-	"github.com/hatchify/scribe"
+	"github.com/gdbu/scribe"
 )
 
 func newPlugin(dir, key string, update bool) (pp *Plugin, err error) {
