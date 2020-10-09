@@ -131,6 +131,7 @@ func updatePluginDependencies(gitURL string) (err error) {
 func goGet(gitURL string) (err error) {
 	args := []string{"get", "-v", "-d", "-buildmode=plugin", gitURL}
 	goget := exec.Command("go", args...)
+	goget.Env = append(os.Environ(), "GO111MODULE=off")
 	goget.Stdin = os.Stdin
 	goget.Stdout = os.Stdout
 
@@ -195,6 +196,10 @@ func goTest(gitURL string) (pass bool, err error) {
 }
 
 func getGoDir(gitURL string) (goDir string) {
+	if isLocal(gitURL) {
+		return gitURL
+	}
+
 	homeDir := os.Getenv("HOME")
 	return path.Join(homeDir, "go", "src", gitURL)
 }
@@ -403,4 +408,30 @@ func getGoPath() (gopath string) {
 	}
 
 	return build.Default.GOPATH
+}
+
+// gitRepoFromURL will truncate a nested plugin source to the git repo that needs updating (avoid redundant pulls)
+func gitRepoFromURL(gitURL string) string {
+	var comps = strings.Split(gitURL, "/")
+	if len(comps) > 3 {
+		// Truncate to repo key
+		gitURL = path.Join(comps[0], comps[1], comps[2])
+	}
+
+	return gitURL
+}
+
+// addToMap returns false if key was already in map
+func addToMap(key, val string, uniqueKeys map[string]string) bool {
+	if _, ok := uniqueKeys[key]; ok {
+		// We already have this key, skip
+		return false
+	}
+
+	uniqueKeys[key] = val
+	return true
+}
+
+func isLocal(path string) bool {
+	return strings.HasPrefix(path, "./")
 }
