@@ -2,7 +2,7 @@ package plugins
 
 import (
 	"bytes"
-	"go/build"
+	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -13,6 +13,8 @@ import (
 
 	"github.com/hatchify/errors"
 )
+
+var cachedGoPath = ""
 
 // ParseKey returns stripped gitUrl and plugin alias
 func ParseKey(key string) (newKey, alias string) {
@@ -34,7 +36,11 @@ func ParseKey(key string) (newKey, alias string) {
 
 func gitFetchTags(gitURL string) (err error) {
 	gitfetch := exec.Command("git", "fetch", "--tags", "--force")
-	gitfetch.Dir = getGitDir(gitURL)
+	if gitfetch.Dir, err = getGitDir(gitURL); err != nil {
+		err = fmt.Errorf("error getting git directory for URL \"%s\": %v", gitURL, err)
+		return
+	}
+
 	gitfetch.Stdin = os.Stdin
 
 	outBuf := bytes.NewBuffer(nil)
@@ -52,7 +58,11 @@ func gitFetchTags(gitURL string) (err error) {
 
 func gitCheckout(gitURL, branch string) (resp string, err error) {
 	gitcheckout := exec.Command("git", "checkout", branch)
-	gitcheckout.Dir = getGitDir(gitURL)
+	if gitcheckout.Dir, err = getGitDir(gitURL); err != nil {
+		err = fmt.Errorf("error getting git directory for URL \"%s\": %v", gitURL, err)
+		return
+	}
+
 	gitcheckout.Stdin = os.Stdin
 
 	outBuf := bytes.NewBuffer(nil)
@@ -85,7 +95,11 @@ func gitCheckout(gitURL, branch string) (resp string, err error) {
 
 func gitPull(gitURL string) (resp string, err error) {
 	gitpull := exec.Command("git", "pull", "origin")
-	gitpull.Dir = getGitDir(gitURL)
+	if gitpull.Dir, err = getGitDir(gitURL); err != nil {
+		err = fmt.Errorf("error getting git directory for URL \"%s\": %v", gitURL, err)
+		return
+	}
+
 	gitpull.Stdin = os.Stdin
 
 	outBuf := bytes.NewBuffer(nil)
@@ -116,7 +130,10 @@ func updatePluginDependencies(gitURL string) (err error) {
 	update := exec.Command("go", args...)
 	update.Stdin = os.Stdin
 	update.Stdout = os.Stdout
-	update.Dir = getGoDir(gitURL)
+	if update.Dir, err = getGitDir(gitURL); err != nil {
+		err = fmt.Errorf("error getting git directory for URL \"%s\": %v", gitURL, err)
+		return
+	}
 
 	errBuf := bytes.NewBuffer(nil)
 	update.Stderr = errBuf
@@ -152,7 +169,10 @@ func goBuild(gitURL, filename string) (err error) {
 	// Build in local directory with target filepath instead of target directory with build path.
 	gobuild := exec.Command("go", "build", "-trimpath", "-buildmode=plugin", "-o", target)
 	// Workaround for https://github.com/golang/go/issues/27751
-	gobuild.Dir = getGoDir(gitURL)
+	gobuild.Dir, err = getGitDir(gitURL)
+	if err != nil {
+		return
+	}
 
 	gobuild.Stdin = os.Stdin
 	gobuild.Stdout = os.Stdout
@@ -176,7 +196,10 @@ func goTest(gitURL string) (pass bool, err error) {
 	// Test in local directory with target filepath instead of target directory with build path.
 	goTest := exec.Command("go", "test")
 	// Workaround for https://github.com/golang/go/issues/27751
-	goTest.Dir = getGoDir(gitURL)
+	goTest.Dir, err = getGitDir(gitURL)
+	if err != nil {
+		return
+	}
 
 	goTest.Stdin = os.Stdin
 	outBuf := bytes.NewBuffer(nil)
@@ -195,22 +218,19 @@ func goTest(gitURL string) (pass bool, err error) {
 	return
 }
 
-func getGoDir(gitURL string) (goDir string) {
+func getGitDir(gitURL string) (goDir string, err error) {
 	if isLocal(gitURL) {
-		return gitURL
+		return gitURL, nil
 	}
 
-	homeDir := os.Getenv("HOME")
-	return path.Join(homeDir, "go", "src", gitURL)
-}
-
-func getGitDir(gitURL string) (goDir string) {
-	homeDir := os.Getenv("HOME")
+	goDir, err = getGoPath()
+	if err != nil {
+		return
+	}
 	spl := strings.Split(gitURL, "/")
 
 	var parts []string
-	parts = append(parts, homeDir)
-	parts = append(parts, "go")
+	parts = append(parts, goDir)
 	parts = append(parts, "src")
 
 	if len(spl) > 0 {
@@ -228,7 +248,7 @@ func getGitDir(gitURL string) (goDir string) {
 		parts = append(parts, spl[2])
 	}
 
-	return path.Join(parts...)
+	return path.Join(parts...), nil
 }
 
 func trimSlash(in string) (out string) {
@@ -392,8 +412,11 @@ func removeBranchHash(gitURL string) (out string) {
 }
 
 func doesPluginSourceExist(gitURL string) (exists bool) {
-	gopath := path.Clean(getGoPath())
-	dir := path.Join(gopath, "src", gitURL)
+	dir, err := getGitDir(gitURL)
+	if err != nil {
+		return
+	}
+
 	info, err := os.Stat(dir)
 	if err != nil {
 		return
@@ -402,12 +425,22 @@ func doesPluginSourceExist(gitURL string) (exists bool) {
 	return info.IsDir()
 }
 
-func getGoPath() (gopath string) {
-	if gopath = os.Getenv("GOPATH"); len(gopath) > 0 {
-		return
+func getGoPath() (goPath string, err error) {
+	goPath = cachedGoPath
+
+	if len(goPath) == 0 {
+		goEnvCmd := exec.Command("go", "env", "GOPATH")
+		output, err := goEnvCmd.CombinedOutput()
+		if err != nil {
+			err = fmt.Errorf("failed to read GOPATH: %v", err)
+			return
+		}
+
+		cachedGoPath = strings.TrimSpace(string(output))
+		goPath = cachedGoPath
 	}
 
-	return build.Default.GOPATH
+	return
 }
 
 // gitRepoFromURL will truncate a nested plugin source to the git repo that needs updating (avoid redundant pulls)
