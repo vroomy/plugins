@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"plugin"
 	"strings"
+	"unsafe"
 
 	"github.com/gdbu/scribe"
+	"github.com/pkujhd/goloader"
 )
 
 func newPlugin(dir, key string, update bool) (pp *Plugin, err error) {
@@ -58,6 +60,8 @@ type Plugin struct {
 	out *scribe.Scribe
 	p   *plugin.Plugin
 
+	cm *goloader.CodeModule
+
 	// Original import key
 	importKey string
 	// Alias given to plugin (e.g. github.com/user/myplugin would be myplugin)
@@ -71,6 +75,19 @@ type Plugin struct {
 
 	// Signals if the plugin was loaded with an active update state
 	update bool
+}
+
+// Lookup will lookup a plugin value
+func (p *Plugin) Lookup(key string, value interface{}) (symbol plugin.Symbol, err error) {
+	ptr := p.cm.Syms[key]
+	if ptr == 0 {
+		err = fmt.Errorf("key of <%s> was not found within this plugin", key)
+		return
+	}
+
+	ptrContainer := (uintptr)(unsafe.Pointer(&ptr))
+	symbol = plugin.Symbol(ptrContainer)
+	return
 }
 
 func (p *Plugin) updatePlugin(branch string) (err error) {
@@ -208,6 +225,26 @@ func (p *Plugin) test() (err error) {
 }
 
 func (p *Plugin) init() (err error) {
-	p.p, err = plugin.Open(p.filename)
+	symPtr := make(map[string]uintptr)
+	if err = goloader.RegSymbol(symPtr); err != nil {
+		err = fmt.Errorf("error registering symbol: %v", err)
+		return
+	}
+
+	// Need to see what types we need to register
+	//goloader.RegTypes()
+
+	reloc, err := goloader.ReadObjs([]string{p.filename}, []string{"~/go/pkg"})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	if p.cm, err = goloader.Load(reloc, symPtr); err != nil {
+		err = fmt.Errorf("error encountered while loading plugin: %v", err)
+		return
+	}
+
+	//p.p, err = plugin.Open(p.filename)
 	return
 }

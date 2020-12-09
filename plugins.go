@@ -54,6 +54,8 @@ type Plugins struct {
 	// Internal plugin store (by key)
 	ps pluginslice
 
+	runtimeMap map[string]uint64
+
 	closed bool
 }
 
@@ -195,7 +197,7 @@ func (p *Plugins) Initialize() (err error) {
 }
 
 // Get will return a plugin by key
-func (p *Plugins) Get(key string) (plugin *plugin.Plugin, err error) {
+func (p *Plugins) Get(key string) (plugin *Plugin, err error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -209,19 +211,19 @@ func (p *Plugins) Get(key string) (plugin *plugin.Plugin, err error) {
 		return
 	}
 
-	plugin = pi.p
+	plugin = pi
 	return
 }
 
 // Backend will associated the backend of the requested key
 func (p *Plugins) Backend(key string, backend interface{}) (err error) {
-	var pi *plugin.Plugin
+	var pi *Plugin
 	if pi, err = p.Get(key); err != nil {
 		return
 	}
 
 	var sym plugin.Symbol
-	if sym, err = pi.Lookup("Backend"); err != nil {
+	if sym, err = pi.p.Lookup("Backend"); err != nil {
 		return
 	}
 
