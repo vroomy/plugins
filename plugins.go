@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"fmt"
-	"plugin"
 	"reflect"
 	"sync"
 
@@ -36,6 +35,7 @@ func New(dir string) (pp *Plugins, err error) {
 	p.out = scribe.New("Plugins")
 	p.dir = dir
 	p.ps = make(pluginslice, 0, 4)
+	p.s = make(symbols)
 	pp = &p
 	return
 }
@@ -44,6 +44,8 @@ func New(dir string) (pp *Plugins, err error) {
 type Plugins struct {
 	mu  sync.RWMutex
 	out *scribe.Scribe
+
+	s symbols
 
 	// Root directory
 	dir string
@@ -188,7 +190,7 @@ func (p *Plugins) Initialize() (err error) {
 
 	for _, pi := range p.ps {
 		p.out.Notificationf("Initializing %s (%s)...", pi.alias, pi.filename)
-		if err = pi.init(); err != nil {
+		if err = pi.init(p.s); err != nil {
 			return
 		}
 	}
@@ -222,7 +224,7 @@ func (p *Plugins) Backend(key string, backend interface{}) (err error) {
 		return
 	}
 
-	var sym plugin.Symbol
+	var sym Symbol
 	if sym, err = pi.p.Lookup("Backend"); err != nil {
 		return
 	}

@@ -78,15 +78,18 @@ type Plugin struct {
 }
 
 // Lookup will lookup a plugin value
-func (p *Plugin) Lookup(key string, value interface{}) (symbol plugin.Symbol, err error) {
+func (p *Plugin) Lookup(key string) (symbol uintptr, err error) {
 	ptr := p.cm.Syms[key]
+	for key, val := range p.cm.Syms {
+		fmt.Printf("Sym K/V: %v / %v\n", key, val)
+	}
+
 	if ptr == 0 {
 		err = fmt.Errorf("key of <%s> was not found within this plugin", key)
 		return
 	}
 
-	ptrContainer := (uintptr)(unsafe.Pointer(&ptr))
-	symbol = plugin.Symbol(ptrContainer)
+	symbol = (uintptr)(unsafe.Pointer(&ptr))
 	return
 }
 
@@ -224,23 +227,17 @@ func (p *Plugin) test() (err error) {
 	return
 }
 
-func (p *Plugin) init() (err error) {
-	symPtr := make(map[string]uintptr)
-	if err = goloader.RegSymbol(symPtr); err != nil {
-		err = fmt.Errorf("error registering symbol: %v", err)
-		return
-	}
-
+func (p *Plugin) init(s symbols) (err error) {
 	// Need to see what types we need to register
-	//goloader.RegTypes()
+	// goloader.RegTypes()
 
-	reloc, err := goloader.ReadObjs([]string{p.filename}, []string{"~/go/pkg"})
+	reloc, err := goloader.ReadObjs([]string{p.filename}, []string{"github.com/vroomy/plugins/testing/foo"})
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	if p.cm, err = goloader.Load(reloc, symPtr); err != nil {
+	if p.cm, err = goloader.Load(reloc, s); err != nil {
 		err = fmt.Errorf("error encountered while loading plugin: %v", err)
 		return
 	}
@@ -248,3 +245,5 @@ func (p *Plugin) init() (err error) {
 	//p.p, err = plugin.Open(p.filename)
 	return
 }
+
+type symbols map[string]uintptr

@@ -435,3 +435,6 @@ func addToMap(key, val string, uniqueKeys map[string]string) bool {
 func isLocal(path string) bool {
 	return strings.HasPrefix(path, "./")
 }
+
+// Symbol represents a plugin symbol
+type Symbol interface{}

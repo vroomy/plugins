@@ -10,5 +10,3 @@ github.com/hatchify/errors v0.4.82 h1:o7eB9r1X3Sx7PBRRXMCaAm+vXcoQLE4ZOesIv4oK36
 github.com/hatchify/errors v0.4.82/go.mod h1:niCrsPjs0fFes147TgJ0LSUVdtavQTUvBxNoJm9Vew0=
 github.com/pkujhd/goloader v0.0.0-20201113071247-a77099465d4c h1:uOI0muAJlTXKMqb/hWMkGYOQtuezxZCzuh4ZdfuKyL8=
 github.com/pkujhd/goloader v0.0.0-20201113071247-a77099465d4c/go.mod h1:OHq1HOoPtoKx6rtaXtTsEOKfX+qdgRHxTGbdKjGqb5s=
-golang.org/x/sys v0.0.0-20201207223542-d4d67f95c62d h1:MiWWjyhUzZ+jvhZvloX6ZrUsdEghn8a64Upd8EMHglE=
-golang.org/x/sys v0.0.0-20201207223542-d4d67f95c62d/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
