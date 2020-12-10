@@ -22,6 +22,8 @@ const (
 	ErrPluginNotLoaded = errors.Error("plugin with that key has not been loaded")
 	// ErrNotAddressable is returned when a non-addressable value is provided
 	ErrNotAddressable = errors.Error("provided backend must be addressable")
+	// ErrBackendFuncDoesNotExist is returned when a Backend func does not exist
+	ErrBackendFuncDoesNotExist = errors.Error("backend func does not exist")
 )
 
 // New will return a new instance of plugins
@@ -224,12 +226,18 @@ func (p *Plugins) Backend(key string, backend interface{}) (err error) {
 		return
 	}
 
-	var sym Symbol
-	if sym, err = pi.p.Lookup("Backend"); err != nil {
+	var (
+		sym Symbol
+		ok  bool
+	)
+
+	if sym, ok = pi.Lookup("Backend"); !ok {
+		err = ErrBackendFuncDoesNotExist
 		return
 	}
 
-	fn, ok := sym.(func() interface{})
+	fn := sym.AsInterfaceFunc()
+	// TODO: Check to see if this func is proper
 	if !ok {
 		return fmt.Errorf("invalid symbol, expected func() interface{} and received %v", reflect.TypeOf(sym))
 	}
@@ -268,7 +276,7 @@ func (p *Plugins) Close() (err error) {
 	var errs errors.ErrorList
 	p.out.Notification("Closing plugins")
 	for _, pi := range p.ps {
-		if err = closePlugin(pi.p); err != nil {
+		if err = pi.Close(); err != nil {
 			errs.Push(fmt.Errorf("error closing %s (%s): %v", pi.alias, pi.filename, err))
 			continue
 		}

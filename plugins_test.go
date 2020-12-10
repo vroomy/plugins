@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"unsafe"
 
 	"github.com/pkujhd/goloader"
 )
@@ -44,12 +43,30 @@ func TestPlugin_init(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var sym Symbol
-	if sym, err = p.Lookup("github.com/vroomy/plugins/testing/foo.init.0"); err != nil {
-		t.Fatal(err)
+	var (
+		sym Symbol
+		ok  bool
+	)
+
+	if sym, ok = p.Lookup("main.main"); !ok {
+		t.Fatal("fn of main.main not found")
 	}
 
-	runFunc := *(*func())(unsafe.Pointer(&sym))
-	runFunc()
+	fn := sym.AsEmptyFunc()
+	if fn == nil {
+		return
+	}
 
+	fn()
+
+	if sym, ok = p.Lookup("main.BigInt"); !ok {
+		t.Fatal("fn of main.main not found")
+	}
+
+	bigIntFn := sym.AsInterfaceFunc()
+	if bigIntFn == nil {
+		return
+	}
+
+	fmt.Println("Value?", bigIntFn())
 }

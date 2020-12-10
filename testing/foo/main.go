@@ -1,9 +1,19 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"math/big"
+)
 
-func init() {
+func main() {
 	var f Foo
 	f.Value = 32
-	fmt.Println("Hello foo!", f)
+	fmt.Println("Hello foobie!", f)
+}
+
+// BigInt will return a big.Int
+func BigInt() interface{} {
+	var i big.Int
+	i.SetUint64(1337)
+	return i
 }

@@ -3,8 +3,8 @@ package plugins
 import (
 	"fmt"
 	"path/filepath"
-	"plugin"
 	"strings"
+	"sync"
 	"unsafe"
 
 	"github.com/gdbu/scribe"
@@ -57,8 +57,9 @@ func newPlugin(dir, key string, update bool) (pp *Plugin, err error) {
 
 // Plugin represents a plugin entry
 type Plugin struct {
+	mux sync.RWMutex
+
 	out *scribe.Scribe
-	p   *plugin.Plugin
 
 	cm *goloader.CodeModule
 
@@ -68,29 +69,66 @@ type Plugin struct {
 	alias string
 	// The git URL for the plugin
 	gitURL string
-	// The filename of the plugin's .so file
+	// The filename of the plugin's object (.o) file
 	filename string
 	// The target branch of the plugin
 	branch string
 
 	// Signals if the plugin was loaded with an active update state
 	update bool
+
+	// Closed state of plugin
+	closed bool
 }
 
 // Lookup will lookup a plugin value
-func (p *Plugin) Lookup(key string) (symbol uintptr, err error) {
+func (p *Plugin) Lookup(key string) (symbol Symbol, ok bool) {
+	p.mux.RLock()
+	defer p.mux.RUnlock()
+	if p.closed {
+		return
+	}
+
 	ptr := p.cm.Syms[key]
 	for key, val := range p.cm.Syms {
 		fmt.Printf("Sym K/V: %v / %v\n", key, val)
 	}
 
 	if ptr == 0 {
-		err = fmt.Errorf("key of <%s> was not found within this plugin", key)
 		return
 	}
 
-	symbol = (uintptr)(unsafe.Pointer(&ptr))
+	symbol = (Symbol)(unsafe.Pointer(&ptr))
+	ok = true
 	return
+}
+
+// Close will close a plugin
+func (p *Plugin) Close() (err error) {
+	p.mux.Lock()
+	defer p.mux.Unlock()
+	err = p.runClose()
+	p.cm.Unload()
+	p.closed = true
+	return
+}
+
+func (p *Plugin) runClose() (err error) {
+	var (
+		sym Symbol
+		ok  bool
+	)
+
+	if sym, ok = p.Lookup("Close"); !ok {
+		return
+	}
+
+	fn := sym.AsErrorFunc()
+	if fn == nil {
+		return
+	}
+
+	return fn()
 }
 
 func (p *Plugin) updatePlugin(branch string) (err error) {
@@ -231,7 +269,7 @@ func (p *Plugin) init(s symbols) (err error) {
 	// Need to see what types we need to register
 	// goloader.RegTypes()
 
-	reloc, err := goloader.ReadObjs([]string{p.filename}, []string{"github.com/vroomy/plugins/testing/foo"})
+	reloc, err := goloader.ReadObjs([]string{p.filename}, []string{""})
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -242,6 +280,14 @@ func (p *Plugin) init(s symbols) (err error) {
 		return
 	}
 
+	runFuncPtr := p.cm.Syms["main.main"]
+	if runFuncPtr == 0 {
+		fmt.Println("Load error! not find function:", "main.main")
+		return
+	}
+	funcPtrContainer := (uintptr)(unsafe.Pointer(&runFuncPtr))
+	runFunc := *(*func())(unsafe.Pointer(&funcPtrContainer))
+	runFunc()
 	//p.p, err = plugin.Open(p.filename)
 	return
 }
