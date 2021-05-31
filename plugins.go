@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"fmt"
-	"plugin"
 	"reflect"
 	"sync"
 
@@ -25,19 +24,21 @@ const (
 	ErrNotAddressable = errors.Error("provided backend must be addressable")
 )
 
-// New will return a new instance of plugins
-func New(dir string) (pp *Plugins, err error) {
-	if len(dir) == 0 {
-		err = ErrInvalidDir
-		return
-	}
+var p = newPlugins()
 
+func Register(key string, pi Plugin) error {
+	return p.Register(key, pi)
+}
+
+func Get(key string) (Plugin, error) {
+	return p.Get(key)
+}
+
+func newPlugins() *Plugins {
 	var p Plugins
 	p.out = scribe.New("Plugins")
-	p.dir = dir
-	p.ps = make(pluginslice, 0, 4)
-	pp = &p
-	return
+	p.pm = make(map[string]Plugin)
+	return &p
 }
 
 // Plugins manages loaded plugins
@@ -45,14 +46,7 @@ type Plugins struct {
 	mu  sync.RWMutex
 	out *scribe.Scribe
 
-	// Root directory
-	dir string
-
-	// Override config if set
-	Branch string
-
-	// Internal plugin store (by key)
-	ps pluginslice
+	pm map[string]Plugin
 
 	closed bool
 }
@@ -61,173 +55,53 @@ type Plugins struct {
 // The following formats are accepted as keys:
 //	- path/to/file/plugin.so
 //	- github.com/username/repository/pluginDir
-func (p *Plugins) New(pluginKey string, update bool) (key string, err error) {
+func (p *Plugins) Register(key string, pi Plugin) (err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	var pi *Plugin
-	if pi, err = newPlugin(p.dir, pluginKey, update); err != nil {
+	if p.closed {
+		err = errors.ErrIsClosed
 		return
 	}
 
-	if p.ps, err = p.ps.append(pi); err != nil {
+	if _, ok := p.pm[key]; ok {
+		return fmt.Errorf("plugin with the key of <%s> has already been loaded", key)
+	}
+
+	p.pm[key] = pi
+	return
+}
+
+// Get will get a plugin by it's key
+func (p *Plugins) Get(key string) (pi Plugin, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.closed {
+		err = errors.ErrIsClosed
 		return
 	}
 
-	key = pi.alias
-	return
-}
-
-// Retrieve will update or download all of the plugins
-func (p *Plugins) Retrieve() (err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	var uniqueKeys = make(map[string]string)
-	for _, pi := range p.ps {
-		// Check if we should update this plugin
-		var gitRepo = gitRepoFromURL(pi.gitURL)
-		if !addToMap(gitRepo, "", uniqueKeys) {
-			continue
-		}
-
-		// Skip fetch on local plugins
-		if isLocal(pi.gitURL) {
-			continue
-		}
-
-		p.out.Notificationf("Updating plugin source: %s", gitRepo)
-		if err = pi.updatePlugin(p.Branch); err != nil {
-			return
-		}
-	}
-
-	return
-}
-
-// Build will build all of the plugins
-func (p *Plugins) Build() (err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for _, pi := range p.ps {
-		if err = pi.build(); err != nil {
-			return
-		}
-	}
-
-	return
-}
-
-// BuildAsync will build all of the plugins asynchronously
-func (p *Plugins) BuildAsync(q *queue.Queue) (err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	var wg sync.WaitGroup
-	wg.Add(len(p.ps))
-
-	var errs errors.ErrorList
-	for _, pi := range p.ps {
-		q.New(func(pi *Plugin) func() {
-			return func() {
-				defer wg.Done()
-				errs.Push(pi.build())
-			}
-		}(pi))
-	}
-
-	wg.Wait()
-
-	return errs.Err()
-}
-
-// Test will test all of the plugins
-func (p *Plugins) Test() (err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for _, pi := range p.ps {
-		if err = pi.test(); err != nil {
-			return
-		}
-	}
-
-	return
-}
-
-// TestAsync will test all of the plugins asynchronously
-func (p *Plugins) TestAsync(q *queue.Queue) (err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	var wg sync.WaitGroup
-	wg.Add(len(p.ps))
-
-	var errs errors.ErrorList
-	for _, pi := range p.ps {
-		q.New(func(pi *Plugin) func() {
-			return func() {
-				defer wg.Done()
-				errs.Push(pi.test())
-			}
-		}(pi))
-	}
-
-	wg.Wait()
-
-	return errs.Err()
-}
-
-// Initialize will initialize all loaded plugins
-func (p *Plugins) Initialize() (err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for _, pi := range p.ps {
-		p.out.Notificationf("Initializing %s (%s)...", pi.alias, pi.filename)
-		if err = pi.init(); err != nil {
-			return
-		}
-	}
-
-	return
-}
-
-// Get will return a plugin by key
-func (p *Plugins) Get(key string) (plugin *plugin.Plugin, err error) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	var (
-		pi *Plugin
-		ok bool
-	)
-
-	if pi, ok = p.ps.get(key); !ok {
-		err = fmt.Errorf("Cannot find plugin %s: %v", key, ErrPluginNotLoaded)
+	var ok bool
+	if pi, ok = p.pm[key]; !ok {
+		err = fmt.Errorf("plugin with key of <%s> has not been registered", key)
 		return
 	}
 
-	plugin = pi.p
 	return
 }
 
 // Backend will associated the backend of the requested key
 func (p *Plugins) Backend(key string, backend interface{}) (err error) {
-	var pi *plugin.Plugin
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return errors.ErrIsClosed
+	}
+
+	var pi Plugin
 	if pi, err = p.Get(key); err != nil {
 		return
-	}
-
-	var sym plugin.Symbol
-	if sym, err = pi.Lookup("Backend"); err != nil {
-		return
-	}
-
-	fn, ok := sym.(func() interface{})
-	if !ok {
-		return fmt.Errorf("invalid symbol, expected func() interface{} and received %v", reflect.TypeOf(sym))
 	}
 
 	refVal := reflect.ValueOf(backend)
@@ -236,7 +110,7 @@ func (p *Plugins) Backend(key string, backend interface{}) (err error) {
 		return ErrNotAddressable
 	}
 
-	beVal := reflect.ValueOf(fn())
+	beVal := reflect.ValueOf(pi.Backend())
 
 	switch {
 	// Check to see if the types match exactly
@@ -253,27 +127,65 @@ func (p *Plugins) Backend(key string, backend interface{}) (err error) {
 	return
 }
 
+// Test will test all of the plugins
+func (p *Plugins) Test() (err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	//for _, pi := range p.pm {
+	// TODO: Resolve test stuff here
+	//if err = pi.test(); err != nil {
+	//	return
+	//}
+	//}
+
+	return errors.Error("testing has not yet been implemented")
+
+}
+
+// TestAsync will test all of the plugins asynchronously
+func (p *Plugins) TestAsync(q *queue.Queue) (err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	//var wg sync.WaitGroup
+	//wg.Add(len(p.pm))
+	//
+	//var errs errors.ErrorList
+	//for _, pi := range p.pm {
+	//	q.New(func(pi Plugin) func() {
+	//		return func() {
+	//			defer wg.Done()
+	//			// Fix test stuff here
+	//		}
+	//	}(pi))
+	//}
+	//
+	//wg.Wait()
+	//
+	//return errs.Err()
+	return errors.Error("testing has not yet been implemented")
+}
+
 // Close will close plugins
 func (p *Plugins) Close() (err error) {
 	p.mu.Lock()
-	p.mu.Unlock()
+	defer p.mu.Unlock()
 	if p.closed {
 		return errors.ErrIsClosed
 	}
 
 	var errs errors.ErrorList
 	p.out.Notification("Closing plugins")
-	for _, pi := range p.ps {
-		if err = closePlugin(pi.p); err != nil {
-			errs.Push(fmt.Errorf("error closing %s (%s): %v", pi.alias, pi.filename, err))
+	for key, pi := range p.pm {
+		if err = pi.Close(); err != nil {
+			errs.Push(fmt.Errorf("error closing %s: %v", key, err))
 			continue
 		}
 
-		p.out.Successf("Closed %s", pi.alias)
+		p.out.Successf("Closed %s", key)
 	}
 
 	p.closed = true
 	return errs.Err()
 }
-
-type backendFn func() interface{}
