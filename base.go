@@ -8,7 +8,7 @@ func (b *BasePlugin) Init(env map[string]string) error {
 	return nil
 }
 
-func (b *BasePlugin) Load(p *Plugins) error {
+func (b *BasePlugin) Load() error {
 	return nil
 }
 

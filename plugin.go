@@ -2,7 +2,7 @@ package plugins
 
 type Plugin interface {
 	Init(env map[string]string) error
-	Load(*Plugins) error
+	Load() error
 	Backend() interface{}
 	Close() error
 }

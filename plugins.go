@@ -26,12 +26,24 @@ const (
 
 var p = newPlugins()
 
+// Register will register a plugin with a given key
 func Register(key string, pi Plugin) error {
 	return p.Register(key, pi)
 }
 
+// Get will retrieve a plugin with a given key
 func Get(key string) (Plugin, error) {
 	return p.Get(key)
+}
+
+// Loaded will return the plugins which have been loaded
+func Loaded() map[string]Plugin {
+	return p.Loaded()
+}
+
+// Backend will associated the backend of the requested key
+func Backend(key string, backend interface{}) error {
+	return p.Backend(key, backend)
 }
 
 func newPlugins() *Plugins {
@@ -86,6 +98,17 @@ func (p *Plugins) Get(key string) (pi Plugin, err error) {
 	if pi, ok = p.pm[key]; !ok {
 		err = fmt.Errorf("plugin with key of <%s> has not been registered", key)
 		return
+	}
+
+	return
+}
+
+func (p *Plugins) Loaded() (pm map[string]Plugin) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	pm = make(map[string]Plugin, len(p.pm))
+	for key, val := range p.pm {
+		pm[key] = val
 	}
 
 	return
