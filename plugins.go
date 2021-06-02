@@ -138,8 +138,13 @@ func (p *Plugins) Backend(key string, backend interface{}) (err error) {
 		return ErrNotAddressable
 	}
 
-	beVal := reflect.ValueOf(pi.Backend())
+	reference := pi.Backend()
+	if reference == nil {
+		// The provided value isn't an exact match, nor does it match the provided interface
+		return fmt.Errorf("cannot call backend for plugin <%s>, provided value is nil", key)
+	}
 
+	beVal := reflect.ValueOf(pi.Backend())
 	switch {
 	// Check to see if the types match exactly
 	case elem.Type() == beVal.Type():
