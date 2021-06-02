@@ -86,8 +86,8 @@ func (p *Plugins) Register(key string, pi Plugin) (err error) {
 
 // Get will get a plugin by it's key
 func (p *Plugins) Get(key string) (pi Plugin, err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
 	if p.closed {
 		err = errors.ErrIsClosed
@@ -122,8 +122,13 @@ func (p *Plugins) Backend(key string, backend interface{}) (err error) {
 		return errors.ErrIsClosed
 	}
 
-	var pi Plugin
-	if pi, err = p.Get(key); err != nil {
+	var (
+		pi Plugin
+		ok bool
+	)
+
+	if pi, ok = p.pm[key]; !ok {
+		err = fmt.Errorf("plugin with key of <%s> has not been registered", key)
 		return
 	}
 
